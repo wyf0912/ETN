@@ -29,7 +29,19 @@ save_config = yaml.load(open(config_file))
 args = easydict.EasyDict(args)
 
 dataset = None
-if args.data.dataset.name == 'office':
+
+import torchvision.datasets as ds
+if args.data.dataset.name == 'digital':
+    dataset = Dataset(
+        path=args.data.dataset.root_path,
+        domains=['mnist', 'usps'],
+        files=[
+            ds.MNIST,
+            ds.USPS
+        ],
+        prefix=args.data.dataset.root_path)
+
+elif args.data.dataset.name == 'office':
     dataset = Dataset(
     path=args.data.dataset.root_path,
     domains=['amazon', 'dslr', 'webcam'],

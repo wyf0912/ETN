@@ -1,5 +1,6 @@
 from easydl import *
 from torchvision import models
+from torch import functional as F
 
 
 class BaseFeatureExtractor(nn.Module):
@@ -21,11 +22,39 @@ class BaseFeatureExtractor(nn.Module):
                 module.train(mode)
 
 
+class LenetFc(BaseFeatureExtractor):
+    def __init__(self, model_path=None):
+        self.features = nn.Sequential(
+            nn.Conv2d(3, 6, 5),
+            nn.ReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.Conv2d(6, 16, 5),
+            nn.Relu(),
+            nn.MaxPool2d(2, 2)
+        )
+        self.fc1 = nn.Linear(16 * 5 * 5, 120)
+        self.fc2 = nn.Liner(120, 84)
+        self.fc3 = nn.Linear(84, 10)
+        self.__in_features = self.fc3.in_features
+
+    def forward(self, x):
+        x = self.features(x)
+        x = x.view(x.size()[0], -1)
+        x = nn.ReLU(self.fc1(x))
+        x = nn.ReLU(self.fc2(x))
+        x = self.fc3(x)
+        return x
+
+    def output_num(self):
+        return self.__in_features
+
+
 class ResNet50Fc(BaseFeatureExtractor):
     """
     ** input image should be in range of [0, 1]**
     """
-    def __init__(self,model_path=None, normalize=True):
+
+    def __init__(self, model_path=None, normalize=True):
         super(ResNet50Fc, self).__init__()
         if model_path:
             if os.path.exists(model_path):
@@ -76,7 +105,7 @@ class ResNet50Fc(BaseFeatureExtractor):
 
 
 class VGG16Fc(BaseFeatureExtractor):
-    def __init__(self,model_path=None, normalize=True):
+    def __init__(self, model_path=None, normalize=True):
         super(VGG16Fc, self).__init__()
         if model_path:
             if os.path.exists(model_path):
@@ -99,7 +128,7 @@ class VGG16Fc(BaseFeatureExtractor):
         self.features = model_vgg.features
         self.classifier = nn.Sequential()
         for i in range(6):
-            self.classifier.add_module("classifier"+str(i), model_vgg.classifier[i])
+            self.classifier.add_module("classifier" + str(i), model_vgg.classifier[i])
         self.feature_layers = nn.Sequential(self.features, self.classifier)
 
         self.__in_features = 4096
@@ -120,16 +149,17 @@ class CLS(nn.Module):
     """
     a two-layer MLP for classification
     """
+
     def __init__(self, in_dim, out_dim, bottle_neck_dim=256, pretrain=False):
         super(CLS, self).__init__()
         self.pretrain = pretrain
         if bottle_neck_dim:
             self.bottleneck = nn.Linear(in_dim, bottle_neck_dim)
             self.fc = nn.Linear(bottle_neck_dim, out_dim)
-            self.main = nn.Sequential(self.bottleneck,self.fc,nn.Softmax(dim=-1))
+            self.main = nn.Sequential(self.bottleneck, self.fc, nn.Softmax(dim=-1))
         else:
             self.fc = nn.Linear(in_dim, out_dim)
-            self.main = nn.Sequential(self.fc,nn.Softmax(dim=-1))
+            self.main = nn.Sequential(self.fc, nn.Softmax(dim=-1))
 
     def forward(self, x):
         out = [x]
@@ -144,13 +174,14 @@ class AdversarialNetwork(nn.Module):
     AdversarialNetwork with a gredient reverse layer.
     its ``forward`` function calls gredient reverse layer first, then applies ``self.main`` module.
     """
+
     def __init__(self, in_feature):
         super(AdversarialNetwork, self).__init__()
         self.main = nn.Sequential(
             nn.Linear(in_feature, 1024),
             nn.ReLU(inplace=True),
             nn.Dropout(0.5),
-            nn.Linear(1024,1024),
+            nn.Linear(1024, 1024),
             nn.ReLU(inplace=True),
             nn.Dropout(0.5),
             nn.Linear(1024, 1),

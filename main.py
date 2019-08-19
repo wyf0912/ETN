@@ -2,11 +2,13 @@ from data import *
 from net import *
 import datetime
 from tqdm import tqdm
+
 if is_in_notebook():
     from tqdm import tqdm_notebook as tqdm
 from torch import optim
 from tensorboardX import SummaryWriter
 import torch.backends.cudnn as cudnn
+
 cudnn.benchmark = True
 cudnn.deterministic = True
 
@@ -25,6 +27,7 @@ seed_everything()
 
 if args.misc.gpus < 1:
     import os
+
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
     gpu_ids = []
     output_device = torch.device('cpu')
@@ -45,7 +48,8 @@ log_text = open(join(log_dir, 'log.txt'), 'w')
 
 model_dict = {
     'resnet50': ResNet50Fc,
-    'vgg16': VGG16Fc
+    'vgg16': VGG16Fc,
+    'lenet': LenetFc
 }
 
 
@@ -60,7 +64,7 @@ class TotalNet(nn.Module):
             nn.Linear(256, 1024),
             nn.ReLU(inplace=True),
             nn.Dropout(0.5),
-            nn.Linear(1024,1024),
+            nn.Linear(1024, 1024),
             nn.ReLU(inplace=True),
             nn.Dropout(0.5),
             nn.Linear(1024, classifier_output_dim),
@@ -69,18 +73,21 @@ class TotalNet(nn.Module):
 
     def forward(self, x):
         f = self.feature_extractor(x)
-        f, _, __, y = self.classifier(f)
+        f, _, __, y = self.classifier(f)  # f, bottle_neck, fc, softmax
         d = self.discriminator(_)
-        y_aug, d_aug = self.classifier_auxiliary(_)
+        y_aug, d_aug = self.classifier_auxiliary(_)  # p total_p
         return y, d, y_aug, d_aug
+
 
 totalNet = TotalNet()
 
 logger.add_graph(totalNet, torch.ones(2, 3, 224, 224))
-feature_extractor = nn.DataParallel(totalNet.feature_extractor, device_ids=gpu_ids, output_device=output_device).train(True)
+feature_extractor = nn.DataParallel(totalNet.feature_extractor, device_ids=gpu_ids, output_device=output_device).train(
+    True)
 classifier = nn.DataParallel(totalNet.classifier, device_ids=gpu_ids, output_device=output_device).train(True)
 discriminator = nn.DataParallel(totalNet.discriminator, device_ids=gpu_ids, output_device=output_device).train(True)
-classifier_auxiliary = nn.DataParallel(totalNet.classifier_auxiliary, device_ids=gpu_ids, output_device=output_device).train(True)
+classifier_auxiliary = nn.DataParallel(totalNet.classifier_auxiliary, device_ids=gpu_ids,
+                                       output_device=output_device).train(True)
 
 if args.test.test_only:
     assert os.path.exists(args.test.resume_file)
@@ -106,31 +113,35 @@ if args.test.test_only:
     print(f'test accuracy is {acc_test}')
     exit(0)
 
-
 # ===================optimizer
 scheduler = lambda step, initial_lr: inverseDecaySheduler(step, initial_lr, gamma=10, power=0.75, max_iter=10000)
 optimizer_finetune = OptimWithSheduler(
-    optim.SGD(feature_extractor.parameters(), lr=args.train.lr / 10.0, weight_decay=args.train.weight_decay, momentum=args.train.momentum, nesterov=True),
+    optim.SGD(feature_extractor.parameters(), lr=args.train.lr / 10.0, weight_decay=args.train.weight_decay,
+              momentum=args.train.momentum, nesterov=True),
     scheduler)
 optimizer_cls = OptimWithSheduler(
-    optim.SGD(classifier.parameters(), lr=args.train.lr, weight_decay=args.train.weight_decay, momentum=args.train.momentum, nesterov=True),
+    optim.SGD(classifier.parameters(), lr=args.train.lr, weight_decay=args.train.weight_decay,
+              momentum=args.train.momentum, nesterov=True),
     scheduler)
 optimizer_discriminator = OptimWithSheduler(
-    optim.SGD(discriminator.parameters(), lr=args.train.lr, weight_decay=args.train.weight_decay, momentum=args.train.momentum, nesterov=True),
+    optim.SGD(discriminator.parameters(), lr=args.train.lr, weight_decay=args.train.weight_decay,
+              momentum=args.train.momentum, nesterov=True),
     scheduler)
 optimizer_classifier_auxiliary = OptimWithSheduler(
-    optim.SGD(classifier_auxiliary.parameters(), lr=args.train.lr, weight_decay=args.train.weight_decay, momentum=args.train.momentum, nesterov=True),
+    optim.SGD(classifier_auxiliary.parameters(), lr=args.train.lr, weight_decay=args.train.weight_decay,
+              momentum=args.train.momentum, nesterov=True),
     scheduler)
 
 global_step = 0
 best_acc = 0
 
-total_steps = tqdm(range(args.train.min_step),desc='global step')
+total_steps = tqdm(range(args.train.min_step), desc='global step')
 epoch_id = 0
 
 while global_step < args.train.min_step:
 
-    iters = tqdm(zip(source_train_dl, target_train_dl), desc=f'epoch {epoch_id} ', total=min(len(source_train_dl), len(target_train_dl)))
+    iters = tqdm(zip(source_train_dl, target_train_dl), desc=f'epoch {epoch_id} ',
+                 total=min(len(source_train_dl), len(target_train_dl)))
     epoch_id += 1
 
     for i, ((im_source, label_source), (im_target, label_target)) in enumerate(iters):
@@ -166,7 +177,8 @@ while global_step < args.train.min_step:
         ce = nn.CrossEntropyLoss(reduction='none')(fc2_s, label_source).view(-1, 1)
         ce = torch.mean(ce * weight, dim=0, keepdim=True)
 
-        tmp = weight * nn.BCELoss(reduction='none')(domain_prob_discriminator_source, torch.ones_like(domain_prob_discriminator_source))
+        tmp = weight * nn.BCELoss(reduction='none')(domain_prob_discriminator_source,
+                                                    torch.ones_like(domain_prob_discriminator_source))
         adv_loss = torch.mean(tmp, dim=0, keepdim=True)
         adv_loss += nn.BCELoss()(domain_prob_discriminator_target, torch.zeros_like(domain_prob_discriminator_target))
 
@@ -188,7 +200,8 @@ while global_step < args.train.min_step:
 
         if global_step % args.log.log_interval == 0:
             counter = AccuracyCounter()
-            counter.addOneBatch(variable_to_numpy(one_hot(label_source, len(source_classes))), variable_to_numpy(predict_prob_source))
+            counter.addOneBatch(variable_to_numpy(one_hot(label_source, len(source_classes))),
+                                variable_to_numpy(predict_prob_source))
             acc_train = torch.tensor([counter.reportAccuracy()]).to(output_device)
             logger.add_scalar('entropy', entropy, global_step)
             logger.add_scalar('adv_loss', adv_loss, global_step)
@@ -209,7 +222,8 @@ while global_step < args.train.min_step:
                     feature = feature_extractor.forward(im)
                     ___, __, before_softmax, predict_prob = classifier.forward(feature)
 
-                    counter.addOneBatch(variable_to_numpy(predict_prob), variable_to_numpy(one_hot(label, args.data.dataset.n_total)))
+                    counter.addOneBatch(variable_to_numpy(predict_prob),
+                                        variable_to_numpy(one_hot(label, args.data.dataset.n_total)))
 
             acc_test = counter.reportAccuracy()
             logger.add_scalar('acc_test', acc_test, global_step)
