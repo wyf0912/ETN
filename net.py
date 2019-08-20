@@ -24,25 +24,26 @@ class BaseFeatureExtractor(nn.Module):
 
 class LenetFc(BaseFeatureExtractor):
     def __init__(self, model_path=None):
+        super(LenetFc, self).__init__()
         self.features = nn.Sequential(
-            nn.Conv2d(3, 6, 5),
+            nn.Conv2d(1, 6, 5),
             nn.ReLU(),
             nn.MaxPool2d(2, 2),
             nn.Conv2d(6, 16, 5),
-            nn.Relu(),
+            nn.ReLU(),
             nn.MaxPool2d(2, 2)
         )
         self.fc1 = nn.Linear(16 * 5 * 5, 120)
-        self.fc2 = nn.Liner(120, 84)
+        self.fc2 = nn.Linear(120, 84)
         self.fc3 = nn.Linear(84, 10)
         self.__in_features = self.fc3.in_features
 
     def forward(self, x):
         x = self.features(x)
         x = x.view(x.size()[0], -1)
-        x = nn.ReLU(self.fc1(x))
-        x = nn.ReLU(self.fc2(x))
-        x = self.fc3(x)
+        x = torch.nn.functional.relu(self.fc1(x))
+        x = torch.nn.functional.relu(self.fc2(x))
+        #x = self.fc3(x)
         return x
 
     def output_num(self):

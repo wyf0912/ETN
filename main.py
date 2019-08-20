@@ -38,7 +38,7 @@ else:
 now = datetime.datetime.now().strftime('%b%d_%H-%M-%S')
 
 log_dir = f'{args.log.root_dir}/{now}'
-
+print("log_dir:", log_dir)
 logger = SummaryWriter(log_dir)
 
 with open(join(log_dir, 'config.yaml'), 'w') as f:
@@ -81,7 +81,7 @@ class TotalNet(nn.Module):
 
 totalNet = TotalNet()
 
-logger.add_graph(totalNet, torch.ones(2, 3, 224, 224))
+logger.add_graph(totalNet, torch.ones(2, 1, 32, 32)) #  torch.ones(2, 3, 224, 224)
 feature_extractor = nn.DataParallel(totalNet.feature_extractor, device_ids=gpu_ids, output_device=output_device).train(
     True)
 classifier = nn.DataParallel(totalNet.classifier, device_ids=gpu_ids, output_device=output_device).train(True)
@@ -116,7 +116,7 @@ if args.test.test_only:
 # ===================optimizer
 scheduler = lambda step, initial_lr: inverseDecaySheduler(step, initial_lr, gamma=10, power=0.75, max_iter=10000)
 optimizer_finetune = OptimWithSheduler(
-    optim.SGD(feature_extractor.parameters(), lr=args.train.lr / 10.0, weight_decay=args.train.weight_decay,
+    optim.SGD(feature_extractor.parameters(), lr=args.train.lr, weight_decay=args.train.weight_decay, # lr=args.train.lr / 10.0
               momentum=args.train.momentum, nesterov=True),
     scheduler)
 optimizer_cls = OptimWithSheduler(
