@@ -1,7 +1,7 @@
 data:
-  dataloader: {batch_size: 36, class_balance: true, data_workers: 3}
-  dataset: {n_share: [0,5], n_total: 10, name: digital, root_path: ~/Remote-Pycharm/ETN,
-    source: 1, target: 0}
+  dataloader: {batch_size: 128, class_balance: true, data_workers: 3}
+  dataset: {n_share: [5,10], n_total: 10, name: digital, root_path: ~/Remote-Pycharm/ETN,
+    source: 0, target: 1}
 log: {log_interval: 10, root_dir: public}
 misc: {gpus: 1}
 model: {base_model: lenet,pretrained_model: None}
